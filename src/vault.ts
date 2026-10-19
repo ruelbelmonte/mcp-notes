@@ -40,11 +40,30 @@ export async function listNotes(baseDir: string): Promise<string[]> {
   return out.sort();
 }
 
-/** Read a note's contents, refusing paths outside the vault. */
+/** Read a markdown note's contents, refusing anything outside the vault. */
 export async function readNote(baseDir: string, relativePath: string): Promise<string> {
   const target = resolveSafe(baseDir, relativePath);
+  if (!target.toLowerCase().endsWith(".md")) {
+    throw new VaultError(`not a markdown note: ${relativePath}`);
+  }
+
+  let realTarget: string;
   try {
-    return await fs.readFile(target, "utf8");
+    realTarget = await fs.realpath(target);
+  } catch {
+    throw new VaultError(`note not found: ${relativePath}`);
+  }
+  // resolveSafe checks the path as written; a symlink inside the vault can still
+  // point outside it, so containment is re-checked on the real location. The
+  // error names only the requested path: the real one would leak host layout.
+  try {
+    resolveSafe(await fs.realpath(baseDir), realTarget);
+  } catch {
+    throw new VaultError(`path escapes the vault: ${relativePath}`);
+  }
+
+  try {
+    return await fs.readFile(realTarget, "utf8");
   } catch {
     throw new VaultError(`note not found: ${relativePath}`);
   }

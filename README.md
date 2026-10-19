@@ -19,7 +19,7 @@ building an MCP tool server that you would actually let near real files.
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `list_notes` | none | every `.md` path in the vault |
-| `read_note` | `path` | the note's contents, or an error if it escapes the vault |
+| `read_note` | `path` | the note's contents; an error if it escapes the vault or is not `.md` |
 | `search_notes` | `query`, optional `limit` | `path:line: text` matches |
 
 ## Run it
@@ -43,7 +43,8 @@ transport), why the tools are read-only, and how path traversal is prevented.
 
 ## Status
 
-Working and tested: `resolveSafe` (path-traversal prevention), recursive
-listing, reading with sandboxing, and bounded search are covered by Vitest. CI
+Working and tested: `resolveSafe` (path-traversal prevention), symlink escapes,
+markdown-only reads, recursive listing, and bounded search are covered by
+Vitest. CI
 runs typecheck (strict), build, and tests. The MCP wiring in `server.ts` is a
 thin adapter over the tested core.

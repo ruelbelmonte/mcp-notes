@@ -5,16 +5,24 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { VaultError, listNotes, readNote, resolveSafe, searchNotes } from "../src/vault";
 
 let dir: string;
+let outside: string;
 
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "vault-"));
   await fs.mkdir(path.join(dir, "ideas"), { recursive: true });
   await fs.writeFile(path.join(dir, "welcome.md"), "# Welcome\nThis vault holds notes.\n");
   await fs.writeFile(path.join(dir, "ideas", "rag.md"), "# RAG\nGround answers in sources.\n");
+  await fs.writeFile(path.join(dir, ".env"), "API_KEY=not-a-note\n");
+
+  outside = await fs.mkdtemp(path.join(os.tmpdir(), "outside-"));
+  await fs.writeFile(path.join(outside, "secret.md"), "outside the vault\n");
+  // A junction needs no admin rights on Windows; other platforms ignore the type.
+  await fs.symlink(outside, path.join(dir, "escape"), "junction");
 });
 
 afterAll(async () => {
   await fs.rm(dir, { recursive: true, force: true });
+  await fs.rm(outside, { recursive: true, force: true });
 });
 
 describe("resolveSafe", () => {
@@ -45,6 +53,15 @@ describe("readNote", () => {
 
   it("refuses to read outside the vault", async () => {
     await expect(readNote(dir, "../../etc/passwd")).rejects.toThrow(VaultError);
+  });
+
+  it("refuses to follow a symlink that points outside the vault", async () => {
+    await expect(readNote(dir, "escape/secret.md")).rejects.toThrow(VaultError);
+    await expect(readNote(dir, "escape/secret.md")).rejects.not.toThrow(outside);
+  });
+
+  it("refuses to read files that are not markdown notes", async () => {
+    await expect(readNote(dir, ".env")).rejects.toThrow(VaultError);
   });
 
   it("reports a missing note", async () => {

@@ -36,10 +36,17 @@ throw.
 fail by construction, not by hoping the model behaves. Centralising it in one
 function means there is exactly one place to audit.
 
-**Cost / honest limit.** This guards logical path escapes. It does not resolve
-symlinks inside the vault that point outside it; if that mattered for a real
-deployment, the next step is to `realpath` the target and re-check containment.
-Stated rather than hidden.
+**Symlinks.** A path can look contained and still escape through a symlink
+inside the vault. `readNote` resolves the real location with `realpath` and
+re-checks containment on that, and the error names only the requested path so
+host layout is not leaked to the model. Listing and search skip symlinks.
+
+**Only notes.** `readNote` refuses anything that is not a `.md` file, so a stray
+`.env` or key file inside the vault is not readable through the tool.
+
+**Limit.** There is a small window between the containment check and the read in
+which a local process could swap a file for a symlink. Closing it needs
+file-descriptor-based checks; it is out of scope for a local, single-user vault.
 
 ## 4. Search is keyword-only, on purpose
 

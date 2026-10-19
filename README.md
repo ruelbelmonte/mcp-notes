@@ -43,8 +43,8 @@ transport), why the tools are read-only, and how path traversal is prevented.
 
 ## Status
 
-Working and tested: `resolveSafe` (path-traversal prevention), symlink escapes,
-markdown-only reads, recursive listing, and bounded search are covered by
+Working and tested: `resolveSafe` (path-traversal prevention), symlink and
+hard-link escapes, markdown-only reads, recursive listing, and bounded search are covered by
 Vitest. CI
 runs typecheck (strict), build, and tests. The MCP wiring in `server.ts` is a
 thin adapter over the tested core.

@@ -6,6 +6,7 @@ import { VaultError, listNotes, readNote, resolveSafe, searchNotes } from "../sr
 
 let dir: string;
 let outside: string;
+let fileSymlinks: boolean;
 
 beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "vault-"));
@@ -18,6 +19,14 @@ beforeAll(async () => {
   await fs.writeFile(path.join(outside, "secret.md"), "outside the vault\n");
   // A junction needs no admin rights on Windows; other platforms ignore the type.
   await fs.symlink(outside, path.join(dir, "escape"), "junction");
+  await fs.writeFile(path.join(outside, "id_key"), "not a note\n");
+  await fs.link(path.join(outside, "id_key"), path.join(dir, "hardlinked.md"));
+  try {
+    await fs.symlink(path.join(dir, ".env"), path.join(dir, "alias.md"), "file");
+    fileSymlinks = true;
+  } catch {
+    fileSymlinks = false; // Windows without admin or developer mode
+  }
 });
 
 afterAll(async () => {
@@ -62,6 +71,15 @@ describe("readNote", () => {
 
   it("refuses to read files that are not markdown notes", async () => {
     await expect(readNote(dir, ".env")).rejects.toThrow(VaultError);
+  });
+
+  it("refuses a .md symlink that resolves to a non-markdown file", async (ctx) => {
+    if (!fileSymlinks) ctx.skip();
+    await expect(readNote(dir, "alias.md")).rejects.toThrow(VaultError);
+  });
+
+  it("refuses a hard-linked note, which realpath cannot see through", async () => {
+    await expect(readNote(dir, "hardlinked.md")).rejects.toThrow(VaultError);
   });
 
   it("reports a missing note", async () => {

@@ -41,12 +41,20 @@ inside the vault. `readNote` resolves the real location with `realpath` and
 re-checks containment on that, and the error names only the requested path so
 host layout is not leaked to the model. Listing and search skip symlinks.
 
-**Only notes.** `readNote` refuses anything that is not a `.md` file, so a stray
-`.env` or key file inside the vault is not readable through the tool.
+**Only notes.** `readNote` refuses anything that is not a `.md` file, checked on
+both the requested and the resolved path, so a stray `.env` or key file is not
+readable through the tool, including via a `.md` symlink pointing at it.
 
-**Limit.** There is a small window between the containment check and the read in
-which a local process could swap a file for a symlink. Closing it needs
-file-descriptor-based checks; it is out of scope for a local, single-user vault.
+**Hard links.** A hard link has no "real" path to resolve, so `realpath` cannot
+see through it. The file is opened once without following links, and refused
+unless the open handle is a regular file with exactly one link. Listing skips
+the same files, so list, search and read agree.
+
+**Limit.** The open uses `O_NOFOLLOW`, which covers only the last path
+component, and Windows has no equivalent flag. A local process that swaps a
+directory for a symlink between the containment check and the open could still
+redirect the read. That needs an attacker who can already write to the vault;
+it is out of scope for a local, single-user vault.
 
 ## 4. Search is keyword-only, on purpose
 

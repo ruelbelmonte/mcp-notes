@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 
 /** Raised when a request would read outside the vault, or a note is missing. */
@@ -20,6 +20,10 @@ export function resolveSafe(baseDir: string, relativePath: string): string {
   return target;
 }
 
+function isMarkdown(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith(".md");
+}
+
 /** All markdown notes in the vault, as sorted vault-relative paths with `/`. */
 export async function listNotes(baseDir: string): Promise<string[]> {
   const base = path.resolve(baseDir);
@@ -30,7 +34,11 @@ export async function listNotes(baseDir: string): Promise<string[]> {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         await walk(full);
-      } else if (entry.isFile() && full.toLowerCase().endsWith(".md")) {
+      } else if (
+        entry.isFile() &&
+        isMarkdown(full) &&
+        (await fs.lstat(full)).nlink === 1 // readNote refuses hard links
+      ) {
         out.push(path.relative(base, full).split(path.sep).join("/"));
       }
     }
@@ -40,13 +48,48 @@ export async function listNotes(baseDir: string): Promise<string[]> {
   return out.sort();
 }
 
-/** Read a note's contents, refusing paths outside the vault. */
+/** Read a markdown note's contents, refusing anything outside the vault. */
 export async function readNote(baseDir: string, relativePath: string): Promise<string> {
   const target = resolveSafe(baseDir, relativePath);
+  if (!isMarkdown(target)) {
+    throw new VaultError(`not a markdown note: ${relativePath}`);
+  }
+
+  let realTarget: string;
   try {
-    return await fs.readFile(target, "utf8");
+    realTarget = await fs.realpath(target);
   } catch {
     throw new VaultError(`note not found: ${relativePath}`);
+  }
+  // resolveSafe checks the path as written; a symlink inside the vault can still
+  // point outside it, so containment is re-checked on the real location. The
+  // error names only the requested path: the real one would leak host layout.
+  try {
+    resolveSafe(await fs.realpath(baseDir), realTarget);
+  } catch {
+    throw new VaultError(`path escapes the vault: ${relativePath}`);
+  }
+  if (!isMarkdown(realTarget)) {
+    throw new VaultError(`not a markdown note: ${relativePath}`);
+  }
+
+  // Open once without following links and read from that handle, so the file
+  // checked is the file read. A hard link is invisible to realpath, so any
+  // file with more than one link is refused.
+  let handle: fs.FileHandle;
+  try {
+    handle = await fs.open(realTarget, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch {
+    throw new VaultError(`note not found: ${relativePath}`);
+  }
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.nlink !== 1) {
+      throw new VaultError(`not a plain note file: ${relativePath}`);
+    }
+    return await handle.readFile("utf8");
+  } finally {
+    await handle.close();
   }
 }
 

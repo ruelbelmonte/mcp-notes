@@ -1,5 +1,5 @@
 {
-  "name": "mcp-notes",
+  "name": "@ruelbelmonte/mcp-notes",
   "version": "0.1.0",
   "description": "An MCP server exposing sandboxed, read-only tools over a markdown notes vault",
   "type": "module",
@@ -10,8 +10,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc",
     "test": "vitest run",
     "start": "node dist/index.js"
   },
@@ -25,7 +25,7 @@
   "author": "Ruel Belmonte",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

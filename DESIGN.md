@@ -50,6 +50,9 @@ see through it. The file is opened once without following links, and refused
 unless the open handle is a regular file with exactly one link. Listing skips
 the same files, so list, search and read agree.
 
+**Size.** `readNote` checks the open handle's size and refuses notes over 1 MB,
+so one file cannot flood the model's context.
+
 **Limit.** The open uses `O_NOFOLLOW`, which covers only the last path
 component, and Windows has no equivalent flag. A local process that swaps a
 directory for a symlink between the containment check and the open could still
@@ -59,7 +62,9 @@ it is out of scope for a local, single-user vault.
 ## 4. Search is keyword-only, on purpose
 
 **Decision.** `search_notes` does case-insensitive substring matching with a
-bounded result count.
+bounded result count. Each matched line is cut to 200 characters around the
+match, and notes `readNote` refuses (too large, links) are skipped rather than
+failing the whole search.
 
 **Why.** For a personal vault it is predictable, dependency-free, and fast
 enough. Semantic search is the obvious upgrade and is noted as such; adding it

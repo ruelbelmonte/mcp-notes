@@ -1,6 +1,13 @@
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { listNotes, readNote, searchNotes } from "./vault.js";
+
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
+
+const readOnly = { readOnlyHint: true, idempotentHint: true, openWorldHint: false };
 
 /**
  * Wire the vault functions up as MCP tools. Deliberately thin: all behaviour
@@ -8,7 +15,7 @@ import { listNotes, readNote, searchNotes } from "./vault.js";
  * SDK or a transport. The tools are read-only by design; there is no write path.
  */
 export function createServer(vaultDir: string): McpServer {
-  const server = new McpServer({ name: "mcp-notes", version: "0.1.0" });
+  const server = new McpServer({ name: "mcp-notes", version });
 
   server.registerTool(
     "list_notes",
@@ -16,6 +23,7 @@ export function createServer(vaultDir: string): McpServer {
       title: "List notes",
       description: "List every markdown note in the vault as relative paths.",
       inputSchema: {},
+      annotations: readOnly,
     },
     async () => {
       const notes = await listNotes(vaultDir);
@@ -28,7 +36,8 @@ export function createServer(vaultDir: string): McpServer {
     {
       title: "Read note",
       description: "Read a note by its vault-relative path (e.g. ideas/rag.md).",
-      inputSchema: { path: z.string().describe("vault-relative path to the note") },
+      inputSchema: { path: z.string().max(1024).describe("vault-relative path to the note") },
+      annotations: readOnly,
     },
     async ({ path: notePath }) => {
       try {
@@ -49,9 +58,10 @@ export function createServer(vaultDir: string): McpServer {
       description:
         "Case-insensitive substring search across notes. Returns path:line: text matches.",
       inputSchema: {
-        query: z.string().describe("text to search for"),
+        query: z.string().max(200).describe("text to search for"),
         limit: z.number().int().positive().max(100).optional(),
       },
+      annotations: readOnly,
     },
     async ({ query, limit }) => {
       const hits = await searchNotes(vaultDir, query, limit ?? 20);

@@ -1,10 +1,15 @@
 #!/usr/bin/env node
-import path from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "./server.js";
+import { resolveVaultDir } from "./vault.js";
 
-// Point at a vault with NOTES_VAULT; defaults to ./notes next to the process.
-const vaultDir = process.env["NOTES_VAULT"] ?? path.resolve(process.cwd(), "notes");
+let vaultDir: string;
+try {
+  vaultDir = await resolveVaultDir(process.env["NOTES_VAULT"]);
+} catch (err) {
+  console.error(`mcp-notes: ${(err as Error).message}`);
+  process.exit(1);
+}
 
 const server = createServer(vaultDir);
 const transport = new StdioServerTransport();

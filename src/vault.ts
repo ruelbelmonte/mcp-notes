@@ -4,6 +4,24 @@ import path from "node:path";
 /** Raised when a request would read outside the vault, or a note is missing. */
 export class VaultError extends Error {}
 
+/** Notes above this size are refused, so one file cannot flood the model's context. */
+export const MAX_NOTE_BYTES = 1024 * 1024;
+/** Search results show at most this many characters of a matched line. */
+export const MAX_LINE_CHARS = 200;
+
+/** Resolve the vault folder from NOTES_VAULT, failing fast if it is unset or not a folder. */
+export async function resolveVaultDir(envValue: string | undefined): Promise<string> {
+  if (envValue === undefined || envValue.trim() === "") {
+    throw new VaultError("NOTES_VAULT is not set; point it at your notes folder");
+  }
+  const dir = path.resolve(envValue);
+  const stat = await fs.stat(dir).catch(() => undefined);
+  if (!stat?.isDirectory()) {
+    throw new VaultError(`NOTES_VAULT is not a folder: ${dir}`);
+  }
+  return dir;
+}
+
 /**
  * Resolve a vault-relative path to an absolute path, refusing anything that
  * escapes the vault. This is the security boundary: an MCP tool exposed to a
@@ -13,8 +31,8 @@ export function resolveSafe(baseDir: string, relativePath: string): string {
   const base = path.resolve(baseDir);
   const target = path.resolve(base, relativePath);
   const rel = path.relative(base, target);
-  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) {
-    if (rel === "") return target; // the vault root itself is fine
+  // Only a leading `..` segment escapes; `..draft.md` is a legal file name.
+  if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
     throw new VaultError(`path escapes the vault: ${relativePath}`);
   }
   return target;
@@ -87,6 +105,11 @@ export async function readNote(baseDir: string, relativePath: string): Promise<s
     if (!stat.isFile() || stat.nlink !== 1) {
       throw new VaultError(`not a plain note file: ${relativePath}`);
     }
+    if (stat.size > MAX_NOTE_BYTES) {
+      throw new VaultError(
+        `note too large: ${relativePath} (${stat.size} bytes, limit ${MAX_NOTE_BYTES})`,
+      );
+    }
     return await handle.readFile("utf8");
   } finally {
     await handle.close();
@@ -99,7 +122,18 @@ export interface SearchHit {
   text: string;
 }
 
-/** Case-insensitive substring search across all notes, bounded by `limit`. */
+/** Up to MAX_LINE_CHARS of `line`, centred on the match at `at`. */
+function excerpt(line: string, at: number): string {
+  if (line.length <= MAX_LINE_CHARS) return line;
+  const start = Math.max(0, Math.min(at - MAX_LINE_CHARS / 2, line.length - MAX_LINE_CHARS));
+  const end = start + MAX_LINE_CHARS;
+  return `${start > 0 ? "…" : ""}${line.slice(start, end)}${end < line.length ? "…" : ""}`;
+}
+
+/**
+ * Case-insensitive substring search across all notes, bounded by `limit` hits
+ * of at most MAX_LINE_CHARS each. Notes readNote refuses are skipped.
+ */
 export async function searchNotes(
   baseDir: string,
   query: string,
@@ -110,12 +144,20 @@ export async function searchNotes(
 
   const hits: SearchHit[] = [];
   for (const rel of await listNotes(baseDir)) {
-    const content = await readNote(baseDir, rel);
+    let content: string;
+    try {
+      content = await readNote(baseDir, rel);
+    } catch (err) {
+      if (err instanceof VaultError) continue;
+      throw err;
+    }
     let lineNo = 0;
     for (const line of content.split(/\r?\n/)) {
       lineNo++;
-      if (line.toLowerCase().includes(needle)) {
-        hits.push({ path: rel, line: lineNo, text: line.trim() });
+      const text = line.trim();
+      const at = text.toLowerCase().indexOf(needle);
+      if (at !== -1) {
+        hits.push({ path: rel, line: lineNo, text: excerpt(text, at) });
         if (hits.length >= limit) return hits;
       }
     }
